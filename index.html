@@ -3,73 +3,167 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Edge Detection with WebSocket</title>
+    <title>AvatarChat</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
     <div class="app-bar">
         <div class="id-section">
-            <label for="peer-id">Your ID: </label>
-            <input type="text" id="peer-id" readonly>
+            <label for="pub-stream">Pub Stream: </label>
+            <input type="text" id="pub-stream" placeholder="Enter 1 or 2">
         </div>
         <div class="id-section">
-            <label for="connect-id">Connect to ID: </label>
-            <input type="text" id="connect-id">
-            <button onclick="connect()">Connect to Peer</button>
+            <label for="sub-stream">Sub Stream: </label>
+            <input type="text" id="sub-stream" placeholder="Enter 1 or 2">
         </div>
+        <button onclick="setStreamIds()">Set Stream IDs</button>        
     </div>
     
-    <video id="video" width="640" height="480" autoplay muted></video>
+    <video id="video" width="640" height="480" autoplay></video>
+    <audio id="audio" controls></audio>
     <canvas id="canvas" width="640" height="480"></canvas>
 
     <script>
         const video = document.getElementById('video');
+        const audioElement = document.getElementById('audio');
         const canvas = document.getElementById('canvas');
         const context = canvas.getContext('2d');
 
         const apiKey = 'YjVjZmI1MjYzYWY0NDA5MWIyMzMzMjQzODNiYzA1Nzc';
-        const streamId = encodeURIComponent('0x5dbef432d012c8d20993214f2c3765e9cf83d180/avatarchat-1');
-
-        // WebSocket setup for both publishing and subscribing
-        const pub = new WebSocket(`wss://adjusted-bass-scarcely.ngrok-free.app/streams/${streamId}/publish?apiKey=${apiKey}`);
-        const sub = new WebSocket(`wss://adjusted-bass-scarcely.ngrok-free.app/streams/${streamId}/subscribe?apiKey=${apiKey}`);
-
+  
+        let pub;
+        let sub;
         let isWebSocketOpen = false;
+        let mediaRecorder;
+        let audioChunks = [];
 
-        pub.onopen = function () {
-            console.log('Connected to the WebSocket for sending data.');
-            isWebSocketOpen = true;
-        };
+        function setStreamIds() {
+            const pubStreamInput = document.getElementById('pub-stream').value;
+            const subStreamInput = document.getElementById('sub-stream').value;
 
-        pub.onerror = function (err) {
-            console.error('WebSocket error (publishing):', err);
-        };
+            // Ensure pub and sub streams are not the same
+            if (pubStreamInput === subStreamInput) {
+                alert("Pub Stream and Sub Stream cannot be the same.");
+                return;
+            }
 
-        pub.onclose = function () {
-            console.log('WebSocket connection closed (publishing).');
-            isWebSocketOpen = false;
-        };
+            if (pubStreamInput !== "1" && pubStreamInput !== "2") {
+                alert("Please enter 1 or 2 for Pub Stream");
+                return;
+            }
 
-        sub.onopen = function () {
-            console.log('Connected to the WebSocket for receiving data.');
-        };
+            if (subStreamInput !== "1" && subStreamInput !== "2") {
+                alert("Please enter 1 or 2 for Sub Stream");
+                return;
+            }
 
-        sub.onerror = function (err) {
-            console.error('WebSocket error (subscribing):', err);
-        };
+            const pubStreamId = encodeURIComponent(`0x5dbef432d012c8d20993214f2c3765e9cf83d180/avatarchat-${pubStreamInput}`);
+            const subStreamId = encodeURIComponent(`0x5dbef432d012c8d20993214f2c3765e9cf83d180/avatarchat-${subStreamInput}`);
 
-        sub.onclose = function () {
-            console.log('WebSocket connection closed (subscribing).');
-        };
+            // Close existing WebSocket connections if open
+            if (pub) {
+                pub.close();
+            }
+            if (sub) {
+                sub.close();
+            }
 
-        // Access the webcam
-        navigator.mediaDevices.getUserMedia({ video: true })
+            // Reconnect WebSockets with the new stream IDs
+            pub = new WebSocket(`wss://adjusted-bass-scarcely.ngrok-free.app/streams/${pubStreamId}/publish?apiKey=${apiKey}`);
+            sub = new WebSocket(`wss://adjusted-bass-scarcely.ngrok-free.app/streams/${subStreamId}/subscribe?apiKey=${apiKey}`);
+
+            // Set up event handlers for the new WebSocket connections
+            pub.onopen = function () {
+                console.log('Connected to the WebSocket for sending data.');
+                isWebSocketOpen = true;
+            };
+
+            pub.onerror = function (err) {
+                console.error('WebSocket error (publishing):', err);
+            };
+
+            pub.onclose = function () {
+                console.log('WebSocket connection closed (publishing).');
+                isWebSocketOpen = false;
+            };
+
+            sub.onopen = function () {
+                console.log('Connected to the WebSocket for receiving data.');
+                isWebSocketOpen = true;
+
+                processFrame();
+            };
+
+            sub.onerror = function (err) {
+                console.error('WebSocket error (subscribing):', err);
+            };
+
+            sub.onclose = function () {
+                console.log('WebSocket connection closed (subscribing).');
+            };
+
+            // Handle incoming messages (video frames and audio)
+            sub.onmessage = (event) => {
+                // Parse the JSON data
+                let parsedData;
+                try {
+                    parsedData = JSON.parse(event.data);
+                } catch (e) {
+                    console.error('Error parsing JSON:', e);
+                    return;
+                }
+
+                // Handle video data
+                if (parsedData.video) {
+                    const base64Image = parsedData.video;
+                    const img = new Image();
+                    img.onload = () => {
+                        context.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    };
+                    img.src = 'data:image/png;base64,' + base64Image;
+                }
+
+                // Handle audio data
+                if (parsedData.audio) {
+                    const audioData = parsedData.audio;
+                    const audioBlob = new Blob([Uint8Array.from(atob(audioData), c => c.charCodeAt(0))], { type: 'audio/webm' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    audioElement.src = audioUrl;
+                    audioElement.play(); // Use the existing audioElement to play the audio
+                }
+            };
+
+
+            console.log('WebSocket connections updated with new stream IDs:', pubStreamId, subStreamId);
+        }
+
+        // Access the webcam and microphone
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             .then(stream => {
                 video.srcObject = stream;
+
+                // Set up the MediaRecorder for capturing audio
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+
+                        // Send audio data as base64
+                         const reader = new FileReader();
+                        reader.onload = () => {
+                            if (isWebSocketOpen) {
+                                pub.send(JSON.stringify({ audio: reader.result.split(',')[1] }));
+                            }
+                        };
+                        reader.readAsDataURL(event.data);
+                    }
+                };
+
+                mediaRecorder.start(100); // Collect audio data every 100ms
             })
             .catch(err => {
-                console.error("Error accessing the camera: " + err);
+                console.error("Error accessing the camera or microphone: " + err);
             });
 
         // Sobel edge detection algorithm
@@ -123,10 +217,11 @@
             // Set edge data to imageData
             for (let i = 0; i < output.length; i++) {
                 const value = output[i];
-                imageData.data[i * 4] = value;
-                imageData.data[i * 4 + 1] = value;
-                imageData.data[i * 4 + 2] = value;
-                imageData.data[i * 4 + 3] = 255; // Full opacity
+                imageData.data[i * 4] = value > 0 ? 139 : 0;    // Red
+                imageData.data[i * 4 + 1] = value > 0 ? 117 : 0; // Green
+                imageData.data[i * 4 + 2] = 0;                  // Blue
+                imageData.data[i * 4 + 3] = 255;                // Full opacity
+
             }
         }
 
@@ -150,40 +245,10 @@
             requestAnimationFrame(processFrame);
         }
 
-        // Handle incoming messages (video frames)
-        sub.onmessage = (event) => {
-            // Parse the JSON data
-            let parsedData;
-            try {
-                parsedData = JSON.parse(event.data);
-            } catch (e) {
-                console.error('Error parsing JSON:', e);
-                return; // Exit the function if the data is not valid JSON
-            }
-
-            // Extract the base64 image data from the parsed JSON
-            const base64Image = parsedData.video;
-
-            if (!base64Image) {
-                console.error('Image data not found in the received message.');
-                return;
-            }
-
-            // Create a new image element
-            const img = new Image();
-            img.onload = () => {
-                // Draw the image onto the canvas
-                context.drawImage(img, 0, 0, canvas.width, canvas.height);
-            };
-
-            // Set the image source to the base64 data
-            img.src = 'data:image/png;base64,' + base64Image;
-        };
-
         // Start processing when the video starts playing
-        video.addEventListener('play', () => {
-            processFrame();
-        });
+        // video.addEventListener('play', () => {
+        //     processFrame();
+        // });
     </script>
 </body>
 </html>
