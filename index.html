@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edge Detection with WebSocket</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="app-bar">
+        <div class="id-section">
+            <label for="peer-id">Your ID: </label>
+            <input type="text" id="peer-id" readonly>
+        </div>
+        <div class="id-section">
+            <label for="connect-id">Connect to ID: </label>
+            <input type="text" id="connect-id">
+            <button onclick="connect()">Connect to Peer</button>
+        </div>
+    </div>
+    
+    <video id="video" width="640" height="480" autoplay muted></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const context = canvas.getContext('2d');
+
+        const apiKey = 'YjVjZmI1MjYzYWY0NDA5MWIyMzMzMjQzODNiYzA1Nzc';
+        const streamId = encodeURIComponent('0x5dbef432d012c8d20993214f2c3765e9cf83d180/avatarchat-1');
+
+        // WebSocket setup for both publishing and subscribing
+        const pub = new WebSocket(`wss://adjusted-bass-scarcely.ngrok-free.app/streams/${streamId}/publish?apiKey=${apiKey}`);
+        const sub = new WebSocket(`wss://adjusted-bass-scarcely.ngrok-free.app/streams/${streamId}/subscribe?apiKey=${apiKey}`);
+
+        let isWebSocketOpen = false;
+
+        pub.onopen = function () {
+            console.log('Connected to the WebSocket for sending data.');
+            isWebSocketOpen = true;
+        };
+
+        pub.onerror = function (err) {
+            console.error('WebSocket error (publishing):', err);
+        };
+
+        pub.onclose = function () {
+            console.log('WebSocket connection closed (publishing).');
+            isWebSocketOpen = false;
+        };
+
+        sub.onopen = function () {
+            console.log('Connected to the WebSocket for receiving data.');
+        };
+
+        sub.onerror = function (err) {
+            console.error('WebSocket error (subscribing):', err);
+        };
+
+        sub.onclose = function () {
+            console.log('WebSocket connection closed (subscribing).');
+        };
+
+        // Access the webcam
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                video.srcObject = stream;
+            })
+            .catch(err => {
+                console.error("Error accessing the camera: " + err);
+            });
+
+        // Sobel edge detection algorithm
+        function applySobelFilter(imageData) {
+            const width = imageData.width;
+            const height = imageData.height;
+            const gray = new Uint8ClampedArray(width * height);
+
+            // Convert to grayscale
+            for (let i = 0; i < gray.length; i++) {
+                const r = imageData.data[i * 4];
+                const g = imageData.data[i * 4 + 1];
+                const b = imageData.data[i * 4 + 2];
+                gray[i] = 0.3 * r + 0.59 * g + 0.11 * b;
+            }
+
+            // Sobel kernels
+            const sobelX = [
+                -1, 0, 1,
+                -2, 0, 2,
+                -1, 0, 1
+            ];
+            const sobelY = [
+                -1, -2, -1,
+                0, 0, 0,
+                1, 2, 1
+            ];
+
+            // Apply Sobel filter
+            const output = new Uint8ClampedArray(width * height);
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    let gx = 0;
+                    let gy = 0;
+
+                    // Convolve with Sobel kernels
+                    for (let ky = -1; ky <= 1; ky++) {
+                        for (let kx = -1; kx <= 1; kx++) {
+                            const pixelVal = gray[(y + ky) * width + (x + kx)];
+                            gx += pixelVal * sobelX[(ky + 1) * 3 + (kx + 1)];
+                            gy += pixelVal * sobelY[(ky + 1) * 3 + (kx + 1)];
+                        }
+                    }
+
+                    // Compute gradient magnitude
+                    const magnitude = Math.sqrt(gx * gx + gy * gy);
+                    output[y * width + x] = magnitude > 128 ? 255 : 0; // Edge threshold
+                }
+            }
+
+            // Set edge data to imageData
+            for (let i = 0; i < output.length; i++) {
+                const value = output[i];
+                imageData.data[i * 4] = value;
+                imageData.data[i * 4 + 1] = value;
+                imageData.data[i * 4 + 2] = value;
+                imageData.data[i * 4 + 3] = 255; // Full opacity
+            }
+        }
+
+        // Draw the video frame to the canvas, apply edge detection, and send to WebSocket
+        function processFrame() {
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const frame = context.getImageData(0, 0, canvas.width, canvas.height);
+            applySobelFilter(frame);
+            context.putImageData(frame, 0, 0);
+
+            // Convert the processed frame to a base64 string
+            const base64Image = canvas.toDataURL('image/png').split(',')[1];
+
+            // Send the base64 string to the WebSocket server
+            if (isWebSocketOpen) {
+                pub.send(JSON.stringify({ video: base64Image }));
+            } else {
+                console.error('WebSocket is not open. Cannot send data.');
+            }
+
+            requestAnimationFrame(processFrame);
+        }
+
+        // Handle incoming messages (video frames)
+        sub.onmessage = (event) => {
+            // Parse the JSON data
+            let parsedData;
+            try {
+                parsedData = JSON.parse(event.data);
+            } catch (e) {
+                console.error('Error parsing JSON:', e);
+                return; // Exit the function if the data is not valid JSON
+            }
+
+            // Extract the base64 image data from the parsed JSON
+            const base64Image = parsedData.video;
+
+            if (!base64Image) {
+                console.error('Image data not found in the received message.');
+                return;
+            }
+
+            // Create a new image element
+            const img = new Image();
+            img.onload = () => {
+                // Draw the image onto the canvas
+                context.drawImage(img, 0, 0, canvas.width, canvas.height);
+            };
+
+            // Set the image source to the base64 data
+            img.src = 'data:image/png;base64,' + base64Image;
+        };
+
+        // Start processing when the video starts playing
+        video.addEventListener('play', () => {
+            processFrame();
+        });
+    </script>
+</body>
+</html>
