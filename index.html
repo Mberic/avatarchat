@@ -10,26 +10,34 @@
 
     <div class="app-bar">
         <div class="id-section">
-            <label for="pub-stream">Pub Stream: </label>
+            <label for="pub-stream">Publish: </label>
             <input type="text" id="pub-stream" placeholder="Enter 1 or 2">
-            <button onclick="setPubStreamId()">Set Pub Stream</button>
+            <button onclick="setPubStreamId()">Enter</button>
         </div>
         <div class="id-section">
-            <label for="sub-stream">Sub Stream: </label>
+            <label for="sub-stream">Subscribe: </label>
             <input type="text" id="sub-stream" placeholder="Enter 1 or 2">
-            <button onclick="setSubStreamId()">Set Sub Stream</button>
+            <button onclick="setSubStreamId()">Enter</button>
         </div>
     </div> 
     
-    <video id="video" width="640" height="480" autoplay></video>
+    <video id="video" autoplay></video>
     <audio id="audio" controls></audio>
-    <canvas id="canvas" width="640" height="480"></canvas>
+    
+    <div class="container">
+        <canvas id="canvas"></canvas>
+        <canvas id="canvas-sub"></canvas>
+    </div>
+    
 
     <script>
         const video = document.getElementById('video');
         const audioElement = document.getElementById('audio');
         const canvas = document.getElementById('canvas');
         const context = canvas.getContext('2d', { willReadFrequently: true });
+
+        const canvassub = document.getElementById('canvas-sub');
+        const contextsub = canvassub.getContext('2d', { willReadFrequently: true });
 
         const apiKey1 = 'YjVjZmI1MjYzYWY0NDA5MWIyMzMzMjQzODNiYzA1Nzc';
         const apiKey2 = "MzNjMTU2Mzk2YmIwNDUyZWI5NWQ1ZTEwNGQ2YmZkMWI";
@@ -126,28 +134,28 @@
                     const base64Image = parsedData.video;
                     const img = new Image();
                     img.onload = () => {
-                        context.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        contextsub.drawImage(img, 0, 0, canvassub.width, canvassub.height);
                     };
                     img.src = 'data:image/png;base64,' + base64Image;
                 }
 
-                if (parsedData.audio) {
-                    const audioData = parsedData.audio;
+                // if (parsedData.audio) {
+                //     const audioData = parsedData.audio;
 
-                    try {
-                        // Validate base64 string
-                        if (!/^[A-Za-z0-9+/=]+$/.test(audioData)) {
-                            throw new Error("Invalid base64 string.");
-                        }
+                //     try {
+                //         // Validate base64 string
+                //         if (!/^[A-Za-z0-9+/=]+$/.test(audioData)) {
+                //             throw new Error("Invalid base64 string.");
+                //         }
 
-                        const audioBlob = new Blob([Uint8Array.from(atob(audioData), c => c.charCodeAt(0))], { type: 'audio/webm' });
-                        const audioUrl = URL.createObjectURL(audioBlob);
-                        audioElement.src = audioUrl;
-                        audioElement.play();
-                    } catch (err) {
-                        console.error('Error decoding audio base64 data:', err);
-                    }
-                }
+                //         const audioBlob = new Blob([Uint8Array.from(atob(audioData), c => c.charCodeAt(0))], { type: 'audio/webm' });
+                //         const audioUrl = URL.createObjectURL(audioBlob);
+                //         audioElement.src = audioUrl;
+                //         audioElement.play();
+                //     } catch (err) {
+                //         console.error('Error decoding audio base64 data:', err);
+                //     }
+                // }
 
             };
 
