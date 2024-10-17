@@ -12,13 +12,14 @@
         <div class="id-section">
             <label for="pub-stream">Pub Stream: </label>
             <input type="text" id="pub-stream" placeholder="Enter 1 or 2">
+            <button onclick="setPubStreamId()">Set Pub Stream</button>
         </div>
         <div class="id-section">
             <label for="sub-stream">Sub Stream: </label>
             <input type="text" id="sub-stream" placeholder="Enter 1 or 2">
+            <button onclick="setSubStreamId()">Set Sub Stream</button>
         </div>
-        <button onclick="setStreamIds()">Set Stream IDs</button>        
-    </div>
+    </div> 
     
     <video id="video" width="640" height="480" autoplay></video>
     <audio id="audio" controls></audio>
@@ -28,9 +29,10 @@
         const video = document.getElementById('video');
         const audioElement = document.getElementById('audio');
         const canvas = document.getElementById('canvas');
-        const context = canvas.getContext('2d');
+        const context = canvas.getContext('2d', { willReadFrequently: true });
 
-        const apiKey = 'YjVjZmI1MjYzYWY0NDA5MWIyMzMzMjQzODNiYzA1Nzc';
+        const apiKey1 = 'YjVjZmI1MjYzYWY0NDA5MWIyMzMzMjQzODNiYzA1Nzc';
+        const apiKey2 = "MzNjMTU2Mzk2YmIwNDUyZWI5NWQ1ZTEwNGQ2YmZkMWI";
   
         let pub;
         let sub;
@@ -38,42 +40,26 @@
         let mediaRecorder;
         let audioChunks = [];
 
-        function setStreamIds() {
+        function setPubStreamId() {
             const pubStreamInput = document.getElementById('pub-stream').value;
-            const subStreamInput = document.getElementById('sub-stream').value;
 
-            // Ensure pub and sub streams are not the same
-            if (pubStreamInput === subStreamInput) {
-                alert("Pub Stream and Sub Stream cannot be the same.");
-                return;
-            }
-
-            if (pubStreamInput !== "1" && pubStreamInput !== "2") {
+            // Validate pubStreamInput value
+            if (pubStreamInput !== '1' && pubStreamInput !== '2') {
                 alert("Please enter 1 or 2 for Pub Stream");
                 return;
             }
 
-            if (subStreamInput !== "1" && subStreamInput !== "2") {
-                alert("Please enter 1 or 2 for Sub Stream");
-                return;
-            }
-
             const pubStreamId = encodeURIComponent(`0x5dbef432d012c8d20993214f2c3765e9cf83d180/avatarchat-${pubStreamInput}`);
-            const subStreamId = encodeURIComponent(`0x5dbef432d012c8d20993214f2c3765e9cf83d180/avatarchat-${subStreamInput}`);
 
-            // Close existing WebSocket connections if open
+            // Close existing WebSocket connection if open
             if (pub) {
                 pub.close();
             }
-            if (sub) {
-                sub.close();
-            }
 
-            // Reconnect WebSockets with the new stream IDs
-            pub = new WebSocket(`wss://adjusted-bass-scarcely.ngrok-free.app/streams/${pubStreamId}/publish?apiKey=${apiKey}`);
-            sub = new WebSocket(`wss://adjusted-bass-scarcely.ngrok-free.app/streams/${subStreamId}/subscribe?apiKey=${apiKey}`);
+            // Reconnect WebSocket with the new pub stream ID
+            pub = new WebSocket(`wss://adjusted-bass-scarcely.ngrok-free.app/streams/${pubStreamId}/publish?apiKey=${apiKey1}`);
 
-            // Set up event handlers for the new WebSocket connections
+            // Set up event handlers for the new WebSocket connection
             pub.onopen = function () {
                 console.log('Connected to the WebSocket for sending data.');
                 isWebSocketOpen = true;
@@ -88,6 +74,29 @@
                 isWebSocketOpen = false;
             };
 
+            console.log('WebSocket connection updated with new pub stream ID:', pubStreamId);
+        }
+
+        function setSubStreamId() {
+            const subStreamInput = document.getElementById('sub-stream').value;
+
+            // Validate subStreamInput value
+            if (subStreamInput !== '1' && subStreamInput !== '2') {
+                alert("Please enter 1 or 2 for Sub Stream");
+                return;
+            }
+
+            const subStreamId = encodeURIComponent(`0x5dbef432d012c8d20993214f2c3765e9cf83d180/avatarchat-${subStreamInput}`);
+
+            // Close existing WebSocket connection if open
+            if (sub) {
+                sub.close();
+            }
+
+            // Reconnect WebSocket with the new sub stream ID
+            sub = new WebSocket(`wss://adjusted-bass-scarcely.ngrok-free.app/streams/${subStreamId}/subscribe?apiKey=${apiKey2}`);
+
+            // Set up event handlers for the new WebSocket connection
             sub.onopen = function () {
                 console.log('Connected to the WebSocket for receiving data.');
                 isWebSocketOpen = true;
@@ -105,7 +114,6 @@
 
             // Handle incoming messages (video frames and audio)
             sub.onmessage = (event) => {
-                // Parse the JSON data
                 let parsedData;
                 try {
                     parsedData = JSON.parse(event.data);
@@ -114,7 +122,6 @@
                     return;
                 }
 
-                // Handle video data
                 if (parsedData.video) {
                     const base64Image = parsedData.video;
                     const img = new Image();
@@ -124,18 +131,27 @@
                     img.src = 'data:image/png;base64,' + base64Image;
                 }
 
-                // Handle audio data
                 if (parsedData.audio) {
                     const audioData = parsedData.audio;
-                    const audioBlob = new Blob([Uint8Array.from(atob(audioData), c => c.charCodeAt(0))], { type: 'audio/webm' });
-                    const audioUrl = URL.createObjectURL(audioBlob);
-                    audioElement.src = audioUrl;
-                    audioElement.play(); // Use the existing audioElement to play the audio
+
+                    try {
+                        // Validate base64 string
+                        if (!/^[A-Za-z0-9+/=]+$/.test(audioData)) {
+                            throw new Error("Invalid base64 string.");
+                        }
+
+                        const audioBlob = new Blob([Uint8Array.from(atob(audioData), c => c.charCodeAt(0))], { type: 'audio/webm' });
+                        const audioUrl = URL.createObjectURL(audioBlob);
+                        audioElement.src = audioUrl;
+                        audioElement.play();
+                    } catch (err) {
+                        console.error('Error decoding audio base64 data:', err);
+                    }
                 }
+
             };
 
-
-            console.log('WebSocket connections updated with new stream IDs:', pubStreamId, subStreamId);
+            console.log('WebSocket connection updated with new sub stream ID:', subStreamId);
         }
 
         // Access the webcam and microphone
