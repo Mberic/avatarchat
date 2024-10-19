@@ -22,7 +22,6 @@
     </div> 
     
     <video id="video" autoplay></video>
-    <audio id="audio" controls></audio>
     
     <div class="container">
         <canvas id="canvas"></canvas>
@@ -40,11 +39,13 @@
         const contextsub = canvassub.getContext('2d', { willReadFrequently: true });
 
         const apiKey1 = 'YjVjZmI1MjYzYWY0NDA5MWIyMzMzMjQzODNiYzA1Nzc';
-        const apiKey2 = "MzNjMTU2Mzk2YmIwNDUyZWI5NWQ1ZTEwNGQ2YmZkMWI";
+        const apiKey2 = 'MzNjMTU2Mzk2YmIwNDUyZWI5NWQ1ZTEwNGQ2YmZkMWI';
   
         let pub;
         let sub;
+        
         let isWebSocketOpen = false;
+       
         let mediaRecorder;
         let audioChunks = [];
 
@@ -65,7 +66,7 @@
             }
 
             // Reconnect WebSocket with the new pub stream ID
-            pub = new WebSocket(`wss://adjusted-bass-scarcely.ngrok-free.app/streams/${pubStreamId}/publish?apiKey=${apiKey1}`);
+            pub = new WebSocket(`wss://evenly-enormous-malamute.ngrok-free.app/streams/${pubStreamId}/publish?apiKey=${apiKey1}`);
 
             // Set up event handlers for the new WebSocket connection
             pub.onopen = function () {
@@ -80,9 +81,20 @@
             pub.onclose = function () {
                 console.log('WebSocket connection closed (publishing).');
                 isWebSocketOpen = false;
+
+                // Retry connection after a delay if it wasn't manually closed
+                setTimeout(setPubStreamId, 5000);
             };
 
             console.log('WebSocket connection updated with new pub stream ID:', pubStreamId);
+        }
+
+        function sendData(data) {
+            if (isWebSocketOpen && pub.readyState === WebSocket.OPEN) {
+                pub.send(data);
+            } else {
+                console.error('WebSocket is not open. Cannot send data.');
+            }
         }
 
         function setSubStreamId() {
@@ -102,7 +114,7 @@
             }
 
             // Reconnect WebSocket with the new sub stream ID
-            sub = new WebSocket(`wss://adjusted-bass-scarcely.ngrok-free.app/streams/${subStreamId}/subscribe?apiKey=${apiKey2}`);
+            sub = new WebSocket(`wss://evenly-enormous-malamute.ngrok-free.app/streams/${subStreamId}/subscribe?apiKey=${apiKey2}`);
 
             // Set up event handlers for the new WebSocket connection
             sub.onopen = function () {
@@ -139,57 +151,85 @@
                     img.src = 'data:image/png;base64,' + base64Image;
                 }
 
-                // if (parsedData.audio) {
-                //     const audioData = parsedData.audio;
+                if (parsedData.audio) {
+                    // Decode base64 audio data
+                    const base64Audio = parsedData.audio;
+                    const audioBlob = base64ToBlob(base64Audio, 'audio/webm');
 
-                //     try {
-                //         // Validate base64 string
-                //         if (!/^[A-Za-z0-9+/=]+$/.test(audioData)) {
-                //             throw new Error("Invalid base64 string.");
-                //         }
+                    // Play the audio
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const audio = new Audio(audioUrl);
+                    audio.play().catch(error => {
+                        console.error('Audio playback failed:', error);
+                    });
 
-                //         const audioBlob = new Blob([Uint8Array.from(atob(audioData), c => c.charCodeAt(0))], { type: 'audio/webm' });
-                //         const audioUrl = URL.createObjectURL(audioBlob);
-                //         audioElement.src = audioUrl;
-                //         audioElement.play();
-                //     } catch (err) {
-                //         console.error('Error decoding audio base64 data:', err);
-                //     }
-                // }
+                    // Clean up the object URL after the audio is done playing
+                    audio.onended = () => {
+                        URL.revokeObjectURL(audioUrl);
+                    };
+                }
 
             };
 
             console.log('WebSocket connection updated with new sub stream ID:', subStreamId);
         }
 
+         // Convert base64 string to Blob
+         function base64ToBlob(base64, mimeType) {
+            const byteCharacters = atob(base64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            return new Blob([byteArray], { type: mimeType });
+        }                   
+        
         // Access the webcam and microphone
         navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             .then(stream => {
                 video.srcObject = stream;
 
-                // Set up the MediaRecorder for capturing audio
-                mediaRecorder = new MediaRecorder(stream);
-                mediaRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0) {
-                        audioChunks.push(event.data);
+            // Set up the MediaRecorder for capturing audio
+            const mediaRecorder = new MediaRecorder(stream);
 
-                        // Send audio data as base64
-                         const reader = new FileReader();
-                        reader.onload = () => {
-                            if (isWebSocketOpen) {
-                                pub.send(JSON.stringify({ audio: reader.result.split(',')[1] }));
-                            }
-                        };
-                        reader.readAsDataURL(event.data);
+            mediaRecorder.ondataavailable = event => {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                audioChunks = [];
+
+                // Convert the audio blob to base64
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const base64Audio = reader.result.split(',')[1];
+
+                    // Send the base64 audio string to the WebSocket server
+                    if (isWebSocketOpen) {
+                        pub.send(JSON.stringify({ audio: base64Audio }));
+                    } else {
+                        console.error('WebSocket is not open. Cannot send data.');
                     }
                 };
+                reader.readAsDataURL(audioBlob);
+            };
 
-                mediaRecorder.start(100); // Collect audio data every 100ms
-            })
-            .catch(err => {
-                console.error("Error accessing the camera or microphone: " + err);
-            });
+            // Start recording
+            mediaRecorder.start();
 
+            // Stop recording every 5 seconds and start again
+            setInterval(() => {
+                mediaRecorder.stop();
+                mediaRecorder.start();
+            }, 5000);
+        })
+        .catch(err => {
+            console.error("Error accessing the microphone: " + err);
+        });
+
+        
         // Sobel edge detection algorithm
         function applySobelFilter(imageData) {
             const width = imageData.width;
@@ -261,7 +301,7 @@
 
             // Send the base64 string to the WebSocket server
             if (isWebSocketOpen) {
-                pub.send(JSON.stringify({ video: base64Image }));
+                sendData(JSON.stringify({ video: base64Image }));
             } else {
                 console.error('WebSocket is not open. Cannot send data.');
             }
@@ -269,10 +309,6 @@
             requestAnimationFrame(processFrame);
         }
 
-        // Start processing when the video starts playing
-        // video.addEventListener('play', () => {
-        //     processFrame();
-        // });
     </script>
 </body>
 </html>
