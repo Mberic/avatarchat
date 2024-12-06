@@ -4,8 +4,6 @@ import "../style.css";
 import { useEffect, useRef, useState } from "react";
 import dynamic from 'next/dynamic';
 import { StreamrClient }  from "@streamr/sdk";
-import * as dotenv from 'dotenv';
-dotenv.config();
 
 const VideoStream = () => {
   const videoRef = useRef(null);
