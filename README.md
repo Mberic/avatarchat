@@ -1,24 +1,36 @@
-# AvatarChat
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-This project uses Sobel edge detection to create a chat avatar from a live webcam stream. The detected edges are then published over the Streamr network. A user (user B) who would like to chat with this user (user A)  subscribes to this stream. 
+## Getting Started
 
-**Note:** Both user A and user B are publishing their streams while also subscribing to each other's streams.
+First, run the development server:
 
-However, it's also possible to only subscribe to a stream without publishing.
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
 
-## Usage
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-This section describes how to interact with the Dapp.
+You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
 
-1. You and the person you would like to chat with should head over to avatarchat.space   
-2. Enter the publisher and subscriber IDs. For this demo, 1 and 2 are the only possible values \- we are yet to implement a user authentication mechanism to remove the need for manually inserting the publisher ID.   
-     
-* Person A should enter 1 and 2   
-* Person B, should enter the opposite: 2 and 1
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Use cases
+## Learn More
 
-Let's look at the intended use cases. 
+To learn more about Next.js, take a look at the following resources:
 
-* Video chat between 2 people   
-* Live streaming e.g. web3 summit, hackathon events 
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
