@@ -17,7 +17,7 @@ const VideoStream = () => {
   const [pubStreamId, setPubStreamId] = useState(null);
   const [subStreamId, setSubStreamId] = useState(null);
 
-  const privateKey = process.env.PRIVATE_KEY;
+  const privateKey = process.env.NEXT_PUBLIC_PRIVATE_KEY;
 
   if (!privateKey) {
     throw new Error('Private key is missing in environment variables');
