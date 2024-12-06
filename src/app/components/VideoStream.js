@@ -3,6 +3,7 @@
 import "../style.css";
 import { useEffect, useRef, useState } from "react";
 import dynamic from 'next/dynamic';
+import Streamr  from "@streamr/sdk";
 
 const VideoStream = () => {
   const videoRef = useRef(null);
@@ -22,8 +23,7 @@ const VideoStream = () => {
     const initializeStreamr = async () => {
       try {
         // Import the web version specifically
-        const StreamrClient = (await import('@streamr/sdk/streamr-sdk.web.js')).default;
-        const client = new StreamrClient({
+        const client = new Streamr({
           auth: { privateKey },
           environment: "polygonAmoy",
         });
