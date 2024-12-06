@@ -2,7 +2,7 @@
 
 import "../style.css";
 import { useEffect, useRef, useState } from "react";
-import { StreamrClient } from "@streamr/sdk";
+import dynamic from 'next/dynamic';
 
 const VideoStream = () => {
   const videoRef = useRef(null);
@@ -19,11 +19,21 @@ const VideoStream = () => {
   const privateKey = "6b6b51cf641130a23a3d06bc464871c6fb2d14fa67093282d501806ef0cf8319";
 
   useEffect(() => {
-    const client = new StreamrClient({
-      auth: { privateKey },
-      environment: "polygonAmoy",
-    });
-    setStreamrClient(client);
+    const initializeStreamr = async () => {
+      try {
+        // Import the web version specifically
+        const StreamrClient = (await import('@streamr/sdk/streamr-sdk.web.js')).default;
+        const client = new StreamrClient({
+          auth: { privateKey },
+          environment: "polygonAmoy",
+        });
+        setStreamrClient(client);
+      } catch (error) {
+        console.error('Error initializing Streamr:', error);
+      }
+    };
+  
+    initializeStreamr();
   }, []);
 
   function applySobelFilter(imageData) {
@@ -189,13 +199,15 @@ const VideoStream = () => {
       
       <video ref={videoRef} autoPlay playsInline />
       
-      <div class="container">
+      <div className="container">
         <canvas ref={canvasRef} width="640" height="480" />
         <canvas ref={canvasSubRef} width="640" height="480" />
       </div>
-      
     </div>
   );
 };
 
-export default VideoStream;
+// Export with dynamic import and SSR disabled
+export default dynamic(() => Promise.resolve(VideoStream), {
+  ssr: false
+});
