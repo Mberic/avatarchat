@@ -4,6 +4,8 @@ import "../style.css";
 import { useEffect, useRef, useState } from "react";
 import dynamic from 'next/dynamic';
 import { StreamrClient }  from "@streamr/sdk";
+import * as dotenv from 'dotenv';
+dotenv.config();
 
 const VideoStream = () => {
   const videoRef = useRef(null);
@@ -17,7 +19,11 @@ const VideoStream = () => {
   const [pubStreamId, setPubStreamId] = useState(null);
   const [subStreamId, setSubStreamId] = useState(null);
 
-  const privateKey = "6b6b51cf641130a23a3d06bc464871c6fb2d14fa67093282d501806ef0cf8319";
+  const privateKey = process.env.PRIVATE_KEY;
+
+  if (!privateKey) {
+    throw new Error('Private key is missing in environment variables');
+  }
 
   useEffect(() => {
     const initializeStreamr = async () => {
