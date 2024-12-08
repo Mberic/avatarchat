@@ -3,7 +3,7 @@
 import "../style.css";
 import { useEffect, useRef, useState } from "react";
 import dynamic from 'next/dynamic';
-import { StreamrClient }  from "@streamr/sdk";
+import { StreamrClient } from "@streamr/sdk";
 
 const VideoStream = () => {
   const videoRef = useRef(null);
@@ -12,10 +12,17 @@ const VideoStream = () => {
   const contextRef = useRef(null);
   const contextSubRef = useRef(null);
   const animationFrameRef = useRef(null);
+  
+  // OpenCV related refs
+  const backSubRef = useRef(null);
+  const opencvRef = useRef(null);
 
   const [streamrClient, setStreamrClient] = useState(null);
   const [pubStreamId, setPubStreamId] = useState(null);
   const [subStreamId, setSubStreamId] = useState(null);
+  const [publisherEdgeColor] = useState({ r: 255, g: 255, b: 0 }); // Yellow
+  const [subscriberEdgeColor] = useState({ r: 255, g: 255, b: 255 }); // White
+  const [isOpenCVLoaded, setIsOpenCVLoaded] = useState(false);
 
   const privateKey = process.env.NEXT_PUBLIC_PRIVATE_KEY;
 
@@ -23,10 +30,27 @@ const VideoStream = () => {
     throw new Error('Private key is missing in environment variables');
   }
 
+  // Load OpenCV.js
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://docs.opencv.org/4.7.0/opencv.js';
+    script.async = true;
+    script.onload = () => {
+      // Initialize background subtractor once OpenCV is loaded
+      opencvRef.current = window.cv;
+      backSubRef.current = new opencvRef.current.BackgroundSubtractorMOG2(500, 16, true);
+      setIsOpenCVLoaded(true);
+    };
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
+
   useEffect(() => {
     const initializeStreamr = async () => {
       try {
-        // Import the web version specifically
         const client = new StreamrClient({
           auth: { privateKey },
           environment: "polygonAmoy",
@@ -40,7 +64,50 @@ const VideoStream = () => {
     initializeStreamr();
   }, []);
 
-  function applySobelFilter(imageData) {
+  function applyBackgroundSubtraction(imageData) {
+    if (!isOpenCVLoaded || !opencvRef.current || !backSubRef.current) return imageData;
+
+    const cv = opencvRef.current;
+    
+    try {
+      // Convert imageData to Mat
+      const width = imageData.width;
+      const height = imageData.height;
+      const src = cv.matFromImageData(imageData);
+      const fgMask = new cv.Mat(height, width, cv.CV_8UC1);
+      const dst = new cv.Mat(height, width, cv.CV_8UC4);
+
+      // Apply background subtraction
+      backSubRef.current.apply(src, fgMask);
+
+      // Apply morphological operations to reduce noise
+      const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
+      cv.morphologyEx(fgMask, fgMask, cv.MORPH_OPEN, kernel);
+
+      // Apply mask to original image
+      src.copyTo(dst, fgMask);
+
+      // Convert back to ImageData
+      const data = new ImageData(
+        new Uint8ClampedArray(dst.data),
+        width,
+        height
+      );
+
+      // Clean up
+      src.delete();
+      fgMask.delete();
+      dst.delete();
+      kernel.delete();
+
+      return data;
+    } catch (error) {
+      console.error('Error in background subtraction:', error);
+      return imageData;
+    }
+  }
+
+  function applySobelFilter(imageData, color) {
     const width = imageData.width;
     const height = imageData.height;
     const gray = new Uint8ClampedArray(width * height);
@@ -76,9 +143,9 @@ const VideoStream = () => {
 
     for (let i = 0; i < output.length; i++) {
       const value = output[i];
-      imageData.data[i * 4] = value > 0 ? 139 : 0;
-      imageData.data[i * 4 + 1] = value > 0 ? 117 : 0;
-      imageData.data[i * 4 + 2] = 0;
+      imageData.data[i * 4] = value > 0 ? color.r : 0;
+      imageData.data[i * 4 + 1] = value > 0 ? color.g : 0;
+      imageData.data[i * 4 + 2] = value > 0 ? color.b : 0;
       imageData.data[i * 4 + 3] = 255;
     }
   }
@@ -94,21 +161,28 @@ const VideoStream = () => {
       canvasRef.current.height
     );
 
-    const frame = contextRef.current.getImageData(
+    let frame = contextRef.current.getImageData(
       0,
       0,
       canvasRef.current.width,
       canvasRef.current.height
     );
 
-    applySobelFilter(frame);
+    // Apply background subtraction
+    frame = applyBackgroundSubtraction(frame);
+    
+    // Apply edge detection with color
+    applySobelFilter(frame, publisherEdgeColor);
     contextRef.current.putImageData(frame, 0, 0);
 
     const base64Image = canvasRef.current.toDataURL("image/png").split(",")[1];
 
     if (streamrClient && pubStreamId) {
       try {
-        await streamrClient.publish(pubStreamId, { video: base64Image });
+        await streamrClient.publish(pubStreamId, { 
+          video: base64Image,
+          isPublisher: true
+        });
       } catch (error) {
         console.error("Failed to publish frame:", error);
       }
@@ -142,9 +216,16 @@ const VideoStream = () => {
     if (streamrClient) {
       streamrClient.subscribe(streamId, (message) => {
         try {
-          if (message.video && contextSubRef.current) {
+          if (message.video && contextSubRef.current && canvasSubRef.current) {
             const img = new Image();
             img.onload = () => {
+              contextSubRef.current.clearRect(
+                0,
+                0,
+                canvasSubRef.current.width,
+                canvasSubRef.current.height
+              );
+
               contextSubRef.current.drawImage(
                 img,
                 0,
@@ -152,12 +233,28 @@ const VideoStream = () => {
                 canvasSubRef.current.width,
                 canvasSubRef.current.height
               );
+
+              let frame = contextSubRef.current.getImageData(
+                0,
+                0,
+                canvasSubRef.current.width,
+                canvasSubRef.current.height
+              );
+
+              // Apply background subtraction
+              frame = applyBackgroundSubtraction(frame);
+              
+              // Apply edge detection with white color
+              applySobelFilter(frame, subscriberEdgeColor);
+              contextSubRef.current.putImageData(frame, 0, 0);
             };
             img.src = "data:image/png;base64," + message.video;
           }
         } catch (error) {
           console.error("Error processing subscribed message:", error);
         }
+      }).catch(error => {
+        console.error("Error in subscription:", error);
       });
     }
   };
@@ -211,7 +308,6 @@ const VideoStream = () => {
   );
 };
 
-// Export with dynamic import and SSR disabled
 export default dynamic(() => Promise.resolve(VideoStream), {
   ssr: false
 });
